@@ -232,9 +232,7 @@ impl Server {
     }
 
     fn handle_cmd_write_rdma(&mut self, addr: SocketAddr, req: &Rdma) {
-        let block_count = req.block_type.block_count().value();
-        let block_shift = req.block_type.block_shift().value();
-        let size = block_count * (1 << (block_shift + 2));
+        let size = req.block_type.blocks_size();
         let data = &req.data[..usize::from(size)];
 
         self.block_device.write(data);

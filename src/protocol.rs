@@ -80,6 +80,15 @@ pub struct BlockType {
     spare: u19,
 }
 
+impl BlockType {
+    pub fn blocks_size(&self) -> u16 {
+        let block_count = self.block_count().value();
+        let block_shift = self.block_shift().value();
+
+        block_count * (1 << (block_shift + 2))
+    }
+}
+
 const_assert!(size_of::<Header>() == 2);
 const_assert!(size_of::<InfoRequest>() == 2);
 const_assert!(size_of::<InfoReply>() == 10);
