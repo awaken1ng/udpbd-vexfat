@@ -103,13 +103,7 @@ impl BlockType {
     }
 }
 
-const_assert!(size_of::<Header>() == 2);
-const_assert!(size_of::<InfoRequest>() == 2);
-const_assert!(size_of::<InfoReply>() == 10);
-const_assert!(size_of::<ReadWriteRequest>() == 8);
-const_assert!(size_of::<WriteReply>() == 6);
 
-const_assert!(size_of::<BlockType>() == 4);
 
 /// Maximum payload for an RDMA packet depends on the used block size:
 /// -   4 * 366 = 1464 bytes
@@ -135,4 +129,10 @@ pub struct Rdma {
     pub data: [u8; RDMA_MAX_PAYLOAD],
 }
 
+const_assert!(size_of::<Header>() == 2);
+const_assert!(size_of::<InfoRequest>() == 2);
+const_assert!(size_of::<InfoReply>() == 10);
+const_assert!(size_of::<ReadWriteRequest>() == 8);
+const_assert!(size_of::<WriteReply>() == 6);
+const_assert!(size_of::<BlockType>() == 4);
 const_assert!(size_of::<Rdma>() == UDP_MAX_PAYLOAD);
