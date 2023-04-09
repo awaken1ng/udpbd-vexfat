@@ -76,8 +76,8 @@ pub struct BlockType {
     #[bits(4..=12, rw)]
     pub block_count: u9, // 1..366 blocks
 
-    #[bits(13..=31, rw)]
-    pub spare: u19,
+    #[bits(13..=31, r)]
+    spare: u19,
 }
 
 const_assert!(size_of::<Header>() == 2);
