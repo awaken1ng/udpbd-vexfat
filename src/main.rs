@@ -244,10 +244,8 @@ impl Server {
             let ser = bytemuck::bytes_of(&reply);
             let resp = &ser[..size_of::<Header>() + size_of::<BlockType>() + size];
 
-            let ser = bytemuck::bytes_of(&reply);
-
             let mut out = std::fs::File::options().create(true).write(true).open(format!("/tmp/dump/resp-{}-{}", self.seq, times)).unwrap();
-            out.write_all(ser).unwrap();
+            out.write_all(resp).unwrap();
             times += 1;
 
             // send packet to PS2
