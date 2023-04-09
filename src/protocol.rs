@@ -1,18 +1,22 @@
-use arbitrary_int::{u19, u3, u4, u5, u9};
-use bitbybit::bitfield;
+use arbitrary_int::{u19, u3, u4, u9};
+use bitbybit::{bitenum, bitfield};
 use bytemuck::{Pod, Zeroable};
 use static_assertions::const_assert;
 use std::mem::size_of;
 
 pub const UDPBD_PORT: u16 = 0xBDBD;
 
-// pub const UDPBD_CMD_INFO:       u8 = 0x00; // client -> server
-pub const UDPBD_CMD_INFO_REPLY: u8 = 0x01; // server -> client
-// pub const UDPBD_CMD_READ:       u8 = 0x02; // client -> server
-pub const UDPBD_CMD_READ_RDMA:  u8 = 0x03; // server -> client
-// pub const UDPBD_CMD_WRITE:      u8 = 0x04; // client -> server
-// pub const UDPBD_CMD_WRITE_RDMA: u8 = 0x05; // client -> server
-pub const UDPBD_CMD_WRITE_DONE: u8 = 0x06; // server -> client
+#[derive(Debug)]
+#[bitenum(u5, exhaustive: false)]
+pub enum Command {
+    Info      = 0x00, // client -> server
+    InfoReply = 0x01, // server -> client
+    Read      = 0x02, // client -> server
+    ReadRdma  = 0x03, // server -> client
+    Write     = 0x04, // client -> server
+    WriteRdma = 0x05, // client -> server
+    WriteDone = 0x06, // server -> client
+}
 
 // 2 bytes - Must be a "(multiple of 4) + 2" for RDMA on the PS2 !
 #[bitfield(u16)]
@@ -20,7 +24,7 @@ pub const UDPBD_CMD_WRITE_DONE: u8 = 0x06; // server -> client
 #[derive(Zeroable, Pod)]
 pub struct Header {
     #[bits(0..=4, rw)]
-    pub command: u5, // 0.. 31 - command
+    pub command: Option<Command>, // 0.. 31 - command
 
     #[bits(5..=7, rw)]
     pub command_id: u3, // 0..  8 - increment with every new command sequence

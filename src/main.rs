@@ -4,12 +4,11 @@ use std::{
     path::Path, net::{UdpSocket, SocketAddr, Ipv4Addr, IpAddr}, env, mem::size_of
 };
 
-use arbitrary_int::{u5, u4, u9};
-use protocol::{UDPBD_PORT, InfoRequest, ReadWriteRequest, Rdma, InfoReply, WriteReply, UDPBD_CMD_WRITE_DONE};
-
-use crate::protocol::{RDMA_MAX_PAYLOAD, Header, UDPBD_CMD_READ_RDMA, UDPBD_CMD_INFO_REPLY, BlockType, UDP_MAX_PAYLOAD};
+use arbitrary_int::{u4, u9};
 
 mod protocol;
+
+use crate::protocol::{RDMA_MAX_PAYLOAD, UDPBD_PORT, InfoRequest, ReadWriteRequest, Rdma, InfoReply, WriteReply, Header, BlockType, UDP_MAX_PAYLOAD, Command};
 
 struct BlockDevice {
     file: File,
@@ -109,14 +108,16 @@ impl Server {
             let (_, addr) = self.socket.recv_from(&mut buf[..]).unwrap();
 
             let header: &Header = bytemuck::from_bytes(&buf[..size_of::<Header>()]);
-            let command = header.command().value();
 
-            match command {
-                0x0 => self.handle_cmd_info(addr, bytemuck::from_bytes(&buf[..size_of::<InfoRequest>()])),
-                0x2 => self.handle_cmd_read(addr, bytemuck::from_bytes(&buf[..size_of::<ReadWriteRequest>()])),
-                0x4 => self.handle_cmd_write(bytemuck::from_bytes(&buf[..size_of::<ReadWriteRequest>()])),
-                0x5 => self.handle_cmd_write_rdma(addr, bytemuck::from_bytes(&buf)),
-                _ => println!("Invalid command: {command}"),
+            match header.command() {
+                Ok(cmd) => match cmd {
+                    Command::Info => self.handle_cmd_info(addr, bytemuck::from_bytes(&buf[..size_of::<InfoRequest>()])),
+                    Command::Read => self.handle_cmd_read(addr, bytemuck::from_bytes(&buf[..size_of::<ReadWriteRequest>()])),
+                    Command::Write => self.handle_cmd_write(bytemuck::from_bytes(&buf[..size_of::<ReadWriteRequest>()])),
+                    Command::WriteRdma => self.handle_cmd_write_rdma(addr, bytemuck::from_bytes(&buf)),
+                    cmd => println!("Expected request, got {cmd:?}")
+                },
+                Err(cmd) => println!("Unknown command: {cmd}"),
             };
         }
     }
@@ -164,7 +165,7 @@ impl Server {
 
         let reply = InfoReply {
             header: Header::new_with_raw_value(0)
-                .with_command(u5::new(UDPBD_CMD_INFO_REPLY))
+                .with_command(Command::InfoReply)
                 .with_command_id(req.header.command_id())
                 .with_command_pkt(1),
             sector_size: u32::from(self.block_device.sector_size()),
@@ -185,7 +186,7 @@ impl Server {
 
         let mut reply = Rdma {
             header: Header::new_with_raw_value(0)
-                .with_command(u5::new(UDPBD_CMD_READ_RDMA))
+                .with_command(Command::ReadRdma)
                 .with_command_id(req.header.command_id())
                 .with_command_pkt(1),
             block_type: BlockType::new_with_raw_value(0)
@@ -241,7 +242,7 @@ impl Server {
         if self.write_size_left == 0 {
             let reply = WriteReply {
                 header: Header::new_with_raw_value(0)
-                    .with_command(u5::new(UDPBD_CMD_WRITE_DONE))
+                    .with_command(Command::WriteDone)
                     .with_command_id(req.header.command_id())
                     .with_command_pkt(req.header.command_id().value() + 1), // ?
                 result: 0,
