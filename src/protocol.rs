@@ -33,6 +33,12 @@ pub struct Header {
     pub command_pkt: u8, // 0..255 - 0=request, 1 or more are response packets
 }
 
+
+// Info request. Can be a broadcast message to detect server on the network.
+//
+// Sequence of packets:
+// - client: InfoRequest
+// - server: InfoReply
 #[repr(C)]
 #[repr(packed)]
 #[derive(Clone, Copy, Zeroable, Pod)]
@@ -49,6 +55,14 @@ pub struct InfoReply {
     pub sector_count: u32, // u32 here, but u16 in rw request
 }
 
+// Read request, sequence of packets:
+// - client: ReadRequest
+// - server: RDMA (1 or more packets)
+//
+// Write request, sequence of packets:
+// - client: WriteRequest
+// - client: RDMA (1 or more packets)
+// - server: WriteDone
 #[repr(C)]
 #[repr(packed)]
 #[derive(Clone, Copy, Zeroable, Pod)]
@@ -97,20 +111,21 @@ const_assert!(size_of::<WriteReply>() == 6);
 
 const_assert!(size_of::<BlockType>() == 4);
 
-/*
- * Maximum payload for an RDMA packet depends on the used block size:
- * -   4 * 366 = 1464 bytes
- * -   8 * 183 = 1464 bytes
- * -  16 *  91 = 1456 bytes
- * -  32 *  45 = 1440 bytes
- * -  64 *  22 = 1408 bytes
- * - 128 *  11 = 1408 bytes <- default
- * - 256 *   5 = 1280 bytes
- * - 512 *   2 = 1024 bytes
- */
+/// Maximum payload for an RDMA packet depends on the used block size:
+/// -   4 * 366 = 1464 bytes
+/// -   8 * 183 = 1464 bytes
+/// -  16 *  91 = 1456 bytes
+/// -  32 *  45 = 1440 bytes
+/// -  64 *  22 = 1408 bytes
+/// - 128 *  11 = 1408 bytes <- default
+/// - 256 *   5 = 1280 bytes
+/// - 512 *   2 = 1024 bytes
 pub const UDP_MAX_PAYLOAD: usize = 1472;
 pub const RDMA_MAX_PAYLOAD: usize = UDP_MAX_PAYLOAD - size_of::<Header>() - size_of::<BlockType>();
 
+/// Remote DMA (RDMA) packet
+/// Used for transfering large blocks of data.
+/// The heart of the protocol. Data must be a "(multiple of 4) + 2" for RDMA on the PS2 !
 #[repr(C)]
 #[repr(packed)]
 #[derive(Clone, Copy, Zeroable, Pod)]
