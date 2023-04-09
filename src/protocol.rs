@@ -6,8 +6,8 @@ use std::mem::size_of;
 
 pub const UDPBD_PORT: u16 = 0xBDBD;
 
-#[derive(Debug)]
 #[bitenum(u5, exhaustive: false)]
+#[derive(Debug)]
 pub enum Command {
     Info      = 0x00, // client -> server
     InfoReply = 0x01, // server -> client
@@ -32,7 +32,6 @@ pub struct Header {
     #[bits(8..=15, rw)]
     pub command_pkt: u8, // 0..255 - 0=request, 1 or more are response packets
 }
-
 
 // Info request. Can be a broadcast message to detect server on the network.
 //
@@ -102,8 +101,6 @@ impl BlockType {
         block_count * (1 << (block_shift + 2))
     }
 }
-
-
 
 /// Maximum payload for an RDMA packet depends on the used block size:
 /// -   4 * 366 = 1464 bytes
