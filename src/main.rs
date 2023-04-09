@@ -78,9 +78,6 @@ struct Server {
     blocks_per_packet: u16,
     blocks_per_socket: u16,
     socket: UdpSocket,
-
-    seq: usize,
-
     write_size_left: u32,
 }
 
@@ -98,8 +95,6 @@ impl Server {
             blocks_per_socket: 0,
             socket,
             write_size_left: 0,
-
-            seq: 0,
         };
         server.set_block_shift(5); // 128b blocks
 
@@ -116,34 +111,13 @@ impl Server {
             let header: &Header = bytemuck::from_bytes(&buf[..size_of::<Header>()]);
             let command = header.command().value();
 
-            #[allow(clippy::match_single_binding)]
-            let trimmed_buf = match command {
-                0x0 => {
-                    self.handle_cmd_info(addr, bytemuck::from_bytes(&buf[..size_of::<InfoRequest>()]));
-                    &buf[..size_of::<InfoRequest>()]
-                },
-                0x2 => {
-                    self.handle_cmd_read(addr, bytemuck::from_bytes(&buf[..size_of::<ReadWriteRequest>()]));
-                    &buf[..size_of::<ReadWriteRequest>()]
-                },
-                0x4 => {
-                    self.handle_cmd_write(bytemuck::from_bytes(&buf[..size_of::<ReadWriteRequest>()]));
-                    &buf[..size_of::<ReadWriteRequest>()]
-                },
-                0x5 => {
-                    self.handle_cmd_write_rdma(addr, bytemuck::from_bytes(&buf));
-                    &buf
-                },
-                _ => {
-                    println!("Invalid command: {command}");
-                    continue;
-                }
+            match command {
+                0x0 => self.handle_cmd_info(addr, bytemuck::from_bytes(&buf[..size_of::<InfoRequest>()])),
+                0x2 => self.handle_cmd_read(addr, bytemuck::from_bytes(&buf[..size_of::<ReadWriteRequest>()])),
+                0x4 => self.handle_cmd_write(bytemuck::from_bytes(&buf[..size_of::<ReadWriteRequest>()])),
+                0x5 => self.handle_cmd_write_rdma(addr, bytemuck::from_bytes(&buf)),
+                _ => println!("Invalid command: {command}"),
             };
-
-            let filepath = format!("/tmp/dump/req-{}", self.seq);
-            let mut out = std::fs::File::options().create(true).write(true).open(filepath).unwrap();
-            out.write_all(trimmed_buf).unwrap();
-            self.seq += 1;
         }
     }
 
@@ -198,9 +172,6 @@ impl Server {
         };
         let ser = bytemuck::bytes_of(&reply);
 
-        let mut out = std::fs::File::options().create(true).write(true).open(format!("/tmp/dump/resp-{}", self.seq)).unwrap();
-        out.write_all(ser).unwrap();
-
         self.socket.send_to(ser, addr).unwrap();
     }
 
@@ -222,7 +193,6 @@ impl Server {
             data: [0; RDMA_MAX_PAYLOAD],
         };
 
-        let mut times = 0;
         let mut blocks_left = sector_count * self.blocks_per_socket;
 
         self.block_device.seek(sector_nr);
@@ -243,10 +213,6 @@ impl Server {
 
             let ser = bytemuck::bytes_of(&reply);
             let resp = &ser[..size_of::<Header>() + size_of::<BlockType>() + size];
-
-            let mut out = std::fs::File::options().create(true).write(true).open(format!("/tmp/dump/resp-{}-{}", self.seq, times)).unwrap();
-            out.write_all(resp).unwrap();
-            times += 1;
 
             // send packet to PS2
             self.socket.send_to(resp, addr).unwrap();
@@ -281,9 +247,6 @@ impl Server {
                 result: 0,
             };
             let ser = bytemuck::bytes_of(&reply);
-
-            let mut out = std::fs::File::options().create(true).write(true).open(format!("/tmp/dump/resp-{}", self.seq)).unwrap();
-            out.write_all(ser).unwrap();
 
             self.socket.send_to(ser, addr).unwrap();
 
