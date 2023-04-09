@@ -77,7 +77,7 @@ struct Server {
     blocks_per_packet: u16,
     blocks_per_socket: u16,
     socket: UdpSocket,
-    write_size_left: u32,
+    write_size_left: usize,
 }
 
 impl Server {
@@ -228,15 +228,15 @@ impl Server {
         println!("UDPBD_CMD_WRITE(cmdId={}, startSector={}, sectorCount={})", req.header.command_id(), sector_nr, sector_count);
 
         self.block_device.seek(sector_nr);
-        self.write_size_left = u32::from(sector_count) * 512;
+        self.write_size_left = usize::from(sector_count) * 512;
     }
 
     fn handle_cmd_write_rdma(&mut self, addr: SocketAddr, req: &Rdma) {
         let size = req.block_type.blocks_size();
-        let data = &req.data[..usize::from(size)];
+        let data = &req.data[..size];
 
         self.block_device.write(data);
-        self.write_size_left -= u32::from(size);
+        self.write_size_left -= size;
         if self.write_size_left == 0 {
             let reply = WriteReply {
                 header: Header::new_with_raw_value(0)

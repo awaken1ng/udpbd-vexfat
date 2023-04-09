@@ -94,11 +94,11 @@ pub struct BlockType {
 }
 
 impl BlockType {
-    pub fn blocks_size(&self) -> u16 {
+    pub fn blocks_size(&self) -> usize {
         let block_count = self.block_count().value();
         let block_shift = self.block_shift().value();
 
-        block_count * (1 << (block_shift + 2))
+        usize::from(block_count) * (1 << (block_shift + 2))
     }
 }
 
@@ -133,3 +133,14 @@ const_assert!(size_of::<ReadWriteRequest>() == 8);
 const_assert!(size_of::<WriteReply>() == 6);
 const_assert!(size_of::<BlockType>() == 4);
 const_assert!(size_of::<Rdma>() == UDP_MAX_PAYLOAD);
+
+#[test]
+fn max_blocks_size() {
+    assert_eq!(
+        BlockType::new_with_raw_value(0)
+            .with_block_shift(u4::new(7))
+            .with_block_count(u9::new(366))
+            .blocks_size(),
+        187392
+    )
+}
