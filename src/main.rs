@@ -14,6 +14,10 @@ use crate::protocol::{RDMA_MAX_PAYLOAD, UDPBD_PORT, InfoRequest, ReadWriteReques
 struct BlockDevice {
     file: File,
     file_size: u64,
+    block_shift: u8,
+    block_size: u16,
+    blocks_per_packet: u16,
+    blocks_per_socket: u16,
 }
 
 impl BlockDevice {
@@ -50,6 +54,10 @@ impl BlockDevice {
         Ok(Self {
             file,
             file_size,
+            block_shift: 0,
+            block_size: 0,
+            blocks_per_packet: 0,
+            blocks_per_socket: 0,
         })
     }
 
@@ -74,14 +82,48 @@ impl BlockDevice {
     fn sector_count(&self) -> u32 {
         (self.file_size / u64::from(self.sector_size())).try_into().unwrap()
     }
+
+    fn set_block_shift(&mut self, shift: u8) {
+        if shift == self.block_shift { return }
+
+        self.block_shift = shift;
+        self.block_size = 1 << (shift + 2);
+        self.blocks_per_packet = RDMA_MAX_PAYLOAD as u16 / self.block_size;
+        self.blocks_per_socket = self.sector_size() / self.block_size;
+        println!("Block size changed to {}", self.block_size);
+    }
+
+    fn set_block_shift_sectors(&mut self, sectors: u16) {
+        // Optimize for:
+        // - the least number of network packets
+        // - the largest block size (faster on the PS2)
+        let size = u32::from(sectors) * u32::from(self.sector_size());
+        let packets_min  = (size + 1440 - 1) / 1440;
+        let packets_128 = (size + 1408 - 1) / 1408;
+        let packets_256 = (size + 1280 - 1) / 1280;
+        let packets_512 = (size + 1024 - 1) / 1024;
+
+        let shift = {
+            if packets_512 == packets_min {
+                7 // 512 byte blocks
+            }
+            else if packets_256 == packets_min {
+                6 // 256 byte blocks
+            }
+            else if packets_128 == packets_min {
+                5 // 128 byte blocks
+            }
+            else {
+                3 //  32 byte blocks
+            }
+        };
+
+        self.set_block_shift(shift);
+    }
 }
 
 struct Server {
     block_device: BlockDevice,
-    block_shift: u8,
-    block_size: u16,
-    blocks_per_packet: u16,
-    blocks_per_socket: u16,
     socket: UdpSocket,
     write_size_left: usize,
     write_rdma_valid: bool,
@@ -95,15 +137,11 @@ impl Server {
 
         let mut server = Server {
             block_device,
-            block_shift: 0,
-            block_size: 0,
-            blocks_per_packet: 0,
-            blocks_per_socket: 0,
             socket,
             write_size_left: 0,
             write_rdma_valid: false,
         };
-        server.set_block_shift(5); // 128b blocks
+        server.block_device.set_block_shift(5); // 128b blocks
 
         Ok(server)
     }
@@ -135,44 +173,7 @@ impl Server {
         }
     }
 
-    fn set_block_shift(&mut self, shift: u8) {
-        if shift == self.block_shift { return }
-
-        self.block_shift = shift;
-        self.block_size = 1 << (shift + 2);
-        self.blocks_per_packet = RDMA_MAX_PAYLOAD as u16 / self.block_size;
-        self.blocks_per_socket = self.block_device.sector_size() / self.block_size;
-        println!("Block size changed to {}", self.block_size);
-    }
-
-    fn set_block_shift_sectors(&mut self, sectors: u16) {
-        // Optimize for:
-        // - the least number of network packets
-        // - the largest block size (faster on the PS2)
-        let size = u32::from(sectors) * u32::from(self.block_device.sector_size());
-        let packets_min  = (size + 1440 - 1) / 1440;
-        let packets_128 = (size + 1408 - 1) / 1408;
-        let packets_256 = (size + 1280 - 1) / 1280;
-        let packets_512 = (size + 1024 - 1) / 1024;
-
-        let shift = {
-            if packets_512 == packets_min {
-                7 // 512 byte blocks
-            }
-            else if packets_256 == packets_min {
-                6 // 256 byte blocks
-            }
-            else if packets_128 == packets_min {
-                5 // 128 byte blocks
-            }
-            else {
-                3 //  32 byte blocks
-            }
-        };
-
-        self.set_block_shift(shift);
-    }
-
+    
     fn handle_cmd_info(&mut self, req: &InfoRequest, addr: SocketAddr) {
         println!("UDPBD_CMD_INFO from {addr}");
 
@@ -196,7 +197,7 @@ impl Server {
 
         println!("UDPBD_CMD_READ(cmdId={}, startSector={}, sectorCount={})", req.header.command_id(), sector_nr, sector_count);
 
-        self.set_block_shift_sectors(sector_count);
+        self.block_device.set_block_shift_sectors(sector_count);
 
         let mut reply = Rdma {
             header: Header::new_with_raw_value(0)
@@ -204,7 +205,7 @@ impl Server {
                 .with_command_id(req.header.command_id())
                 .with_command_pkt(1),
             block_type: BlockType::new_with_raw_value(0)
-                .with_block_shift(u4::new(self.block_shift)),
+                .with_block_shift(u4::new(self.block_device.block_shift)),
             data: [0; RDMA_MAX_PAYLOAD],
         };
 
@@ -214,10 +215,10 @@ impl Server {
             seeked = false;
         }
 
-        let mut blocks_left = sector_count * self.blocks_per_socket;
+        let mut blocks_left = sector_count * self.block_device.blocks_per_socket;
         while blocks_left > 0 {
-            let block_count = if blocks_left > self.blocks_per_packet {
-                self.blocks_per_packet
+            let block_count = if blocks_left > self.block_device.blocks_per_packet {
+                self.block_device.blocks_per_packet
             } else {
                 blocks_left
             };
@@ -225,7 +226,7 @@ impl Server {
             blocks_left -= block_count;
 
             // read data from file
-            let size = usize::from(block_count * self.block_size);
+            let size = usize::from(block_count * self.block_device.block_size);
             let buf = &mut reply.data[..size];
             if seeked {
                 if let Err(err) = self.block_device.read(buf) {
