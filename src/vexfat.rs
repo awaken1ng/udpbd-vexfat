@@ -33,16 +33,6 @@ impl VexFat {
             None => vexfat.root_directory_first_cluster(),
         };
 
-        // create default OPL folders
-        vexfat.add_directory(prefix, "APPS");
-        vexfat.add_directory(prefix, "ART");
-        vexfat.add_directory(prefix, "CD");
-        vexfat.add_directory(prefix, "CFG");
-        vexfat.add_directory(prefix, "CHT");
-        vexfat.add_directory(prefix, "LNG");
-        vexfat.add_directory(prefix, "THM");
-        vexfat.add_directory(prefix, "VMC");
-
         let dvd_cluster = vexfat.add_directory(prefix, "DVD");
         vexfat.add_file(dvd_cluster, &args.file);
 
