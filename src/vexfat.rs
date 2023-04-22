@@ -1,4 +1,4 @@
-use std::{io::{self, Read, Seek}, os::unix::prelude::MetadataExt};
+use std::{io::{self, Read, Seek}};
 
 use vexfatbd::VirtualExFatBlockDevice;
 use walkdir::WalkDir;
@@ -43,7 +43,16 @@ impl VexFat {
                 },
             };
 
-            total_file_size += metadata.size();
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::fs::MetadataExt;
+                total_file_size += metadata.size();
+            }
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::fs::MetadataExt;
+                total_file_size += metadata.file_size();
+            }
 
             files.push(entry.path().to_owned());
         }
