@@ -18,3 +18,4 @@ num-traits = "^0.2.15"
 
 [profile.release]
 overflow-checks = true
+strip = "symbols"
