@@ -22,7 +22,7 @@ impl VexFat {
 
         let mut total_file_size = 0;
 
-        for entry in WalkDir::new(&args.path).min_depth(1).max_depth(2) {
+        for entry in WalkDir::new(&args.path).min_depth(1).max_depth(1) {
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(err) => {
