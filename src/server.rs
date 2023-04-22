@@ -45,7 +45,7 @@ impl Server {
 
     pub fn run(&mut self) {
         let mut buf = [0u8; UDP_MAX_PAYLOAD];
-        println!("Server running on port {} (0x{:x})", UDPBD_PORT, UDPBD_PORT);
+        println!("Server running on port {}", UDPBD_PORT);
 
         loop {
             let (_, addr) = self.socket.recv_from(&mut buf[..]).unwrap();

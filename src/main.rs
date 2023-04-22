@@ -6,15 +6,16 @@ use server::Server;
 mod protocol;
 mod server;
 mod vexfat;
+mod utils;
 
 #[derive(Parser, Debug)]
 #[command(version, arg_required_else_help = true)]
 pub struct Args {
-    /// File to map into virtual file system
-    pub file: PathBuf,
+    /// Path to directory to map as DVD directory in vexFAT.
+    pub path: PathBuf,
 
-    /// OPL prefix
-    #[arg(long)]
+    /// OPL prefix.
+    #[arg(short, long)]
     pub prefix: Option<String>,
 }
 
