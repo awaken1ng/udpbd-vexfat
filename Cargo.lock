@@ -389,7 +389,7 @@ dependencies = [
 
 [[package]]
 name = "udpbd-vexfat"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "arbitrary-int",
