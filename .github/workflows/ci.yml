@@ -23,7 +23,7 @@ jobs:
           target: x86_64-pc-windows-gnu
 
       - name: Build
-      - uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1
         with:
           use-cross: true
           command: build
