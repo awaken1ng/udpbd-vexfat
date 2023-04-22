@@ -1,0 +1,3 @@
+[submodule "vexfatbd"]
+	path = vexfatbd
+	url = https://github.com/awaken1ng/vexfatbd
