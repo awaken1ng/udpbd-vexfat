@@ -11,8 +11,8 @@ mod utils;
 #[derive(Parser, Debug)]
 #[command(version, arg_required_else_help = true)]
 pub struct Args {
-    /// Path to directory to map as DVD directory in vexFAT.
-    pub path: PathBuf,
+    /// Path to OPL root directory to map into vexFAT.
+    pub root: PathBuf,
 
     /// OPL prefix.
     #[arg(short, long)]

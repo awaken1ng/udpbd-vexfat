@@ -1,9 +1,17 @@
-use std::{io::{self, Read, Seek}};
+use std::{
+    collections::HashMap,
+    fs,
+    io::{self, Read, Seek},
+};
 
 use vexfatbd::VirtualExFatBlockDevice;
 use walkdir::WalkDir;
 
-use crate::{protocol::RDMA_MAX_PAYLOAD, Args, utils::{unsigned_rounded_up_div, unsigned_align_to}};
+use crate::{
+    protocol::RDMA_MAX_PAYLOAD,
+    utils::{relative_path_from_common_root, unsigned_align_to, unsigned_rounded_up_div},
+    Args,
+};
 
 const BYTES_PER_SECTOR_SHIFT: u8 = 9; // 512 bytes
 
@@ -18,81 +26,120 @@ pub struct VexFat {
 
 impl VexFat {
     pub fn new(args: &Args) -> Self {
-        let mut files = Vec::new();
+        let root: std::path::PathBuf = args.root.clone();
+        let prefix = match &args.prefix {
+            Some(name) => name.clone(),
+            None => String::new(),
+        };
 
-        let mut total_file_size = 0;
+        for name in [
+            "APPS", "ART", "CD", "CFG", "DVD", "CHT", "LNG", "THM", "VMC",
+        ] {
+            let path = root.join(name);
+            if path.exists() {
+                continue;
+            }
 
-        for entry in WalkDir::new(&args.path).min_depth(1).max_depth(1) {
+            println!("Creating {}", path.display());
+            fs::create_dir(path).expect("failed to create default OPL directories");
+        }
+
+        let mut total_files_bytes = 0;
+        let mut total_files_count = 0;
+        let mut total_dirs_count = 0;
+        let mut items = Vec::new();
+
+        for entry in WalkDir::new(&args.root)
+            .min_depth(1)
+            .contents_first(false)
+            .sort_by_file_name()
+        {
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(err) => {
                     eprintln!("Failed to read entry: {err}");
                     continue;
-                },
+                }
             };
+            let path = entry.path();
 
-            if !entry.path().is_file() {
-                continue;
+            if path.is_file() {
+                let metadata = match entry.metadata() {
+                    Ok(metadata) => metadata,
+                    Err(err) => {
+                        eprintln!("Failed to read metadata: {err}");
+                        continue;
+                    }
+                };
+
+                #[cfg(target_os = "linux")]
+                {
+                    use std::os::unix::fs::MetadataExt;
+                    total_files_bytes += metadata.size();
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    use std::os::windows::fs::MetadataExt;
+                    total_files_bytes += metadata.file_size();
+                }
+
+                total_files_count += 1;
+            } else {
+                total_dirs_count += 1;
             }
 
-            let metadata = match entry.metadata() {
-                Ok(metadata) => metadata,
-                Err(err) => {
-                    eprintln!("Failed to read metadata: {err}");
-                    continue;
-                },
-            };
-
-            #[cfg(target_os = "linux")]
-            {
-                use std::os::unix::fs::MetadataExt;
-                total_file_size += metadata.size();
-            }
-            #[cfg(target_os = "windows")]
-            {
-                use std::os::windows::fs::MetadataExt;
-                total_file_size += metadata.file_size();
-            }
-
-            files.push(entry.path().to_owned());
+            items.push((path.to_owned(), path.is_file()));
         }
-
-        total_file_size += 1024 * 1024 * 1024; // add 1 GiB for directories and what not
 
         let sector_size = 1 << BYTES_PER_SECTOR_SHIFT;
         let sectors_per_cluster_shift = 11; // 2048 sectors
         let sectors_per_cluster = 1 << sectors_per_cluster_shift;
         let bytes_per_cluster = sectors_per_cluster * sector_size;
 
-        let cluster_count = unsigned_rounded_up_div(total_file_size, bytes_per_cluster);
+        let cluster_count = unsigned_rounded_up_div(total_files_bytes, bytes_per_cluster)
+            + (3 * (total_dirs_count + total_files_count));
         let cluster_count = unsigned_align_to(cluster_count, 2);
         let sector_count = cluster_count * sectors_per_cluster;
 
-        let mut vexfat = vexfatbd::VirtualExFatBlockDevice::new(BYTES_PER_SECTOR_SHIFT, sectors_per_cluster_shift, cluster_count as _).unwrap();
-
-        let (prefix, prefix_path_component) = match &args.prefix {
-            Some(name) => (vexfat.add_directory_in_root(name).unwrap(), format!("{name}/")),
-            None => (vexfat.root_directory_cluster(), String::from("/")),
-        };
-
-        // create default OPL folders
-        vexfat.add_directory(prefix, "APPS").unwrap();
-        vexfat.add_directory(prefix, "ART").unwrap();
-        vexfat.add_directory(prefix, "CD").unwrap();
-        vexfat.add_directory(prefix, "CFG").unwrap();
-        vexfat.add_directory(prefix, "CHT").unwrap();
-        vexfat.add_directory(prefix, "LNG").unwrap();
-        vexfat.add_directory(prefix, "THM").unwrap();
-        vexfat.add_directory(prefix, "VMC").unwrap();
-        let dvd = vexfat.add_directory(prefix, "DVD").unwrap();
+        let mut vexfat = vexfatbd::VirtualExFatBlockDevice::new(
+            BYTES_PER_SECTOR_SHIFT,
+            sectors_per_cluster_shift,
+            cluster_count as _,
+        )
+        .unwrap();
 
         println!("Mapping files");
-        for file in files {
-            let file_name = file.file_name().unwrap_or_default().to_string_lossy();
-            match vexfat.map_file(dvd, &file) {
-                Ok(_) => println!("- vexfat:/{prefix_path_component}DVD/{}", file_name),
-                Err(err) => println!("! Failed to map {}: {:?}", file.display(), err),
+
+        let prefix_cluster = match &args.prefix {
+            Some(name) => vexfat.add_directory_in_root(name).unwrap(),
+            None => vexfat.root_directory_cluster(),
+        };
+
+        let mut dirpath_to_cluster = HashMap::from([(root.clone(), prefix_cluster)]);
+
+        for (path, is_file) in items {
+            let parent = path.parent().unwrap().to_owned();
+            let parent_cluster = dirpath_to_cluster.get(&parent).cloned().unwrap();
+
+            if is_file {
+                if let Err(err) = vexfat.map_file(parent_cluster, &path) {
+                    println!("! Failed to map file {}: {:?}", path.display(), err);
+                }
+            } else {
+                let name: &str = path.file_name().unwrap().to_str().unwrap();
+
+                match vexfat.add_directory(parent_cluster, name) {
+                    Ok(dir_cluster) => {
+                        dirpath_to_cluster.insert(path.to_owned(), dir_cluster);
+                    }
+                    Err(err) => {
+                        println!("! Failed to map directory {}: {:?}", path.display(), err);
+                    }
+                }
             }
+
+            let relative = relative_path_from_common_root(&root, &path);
+            println!(" - ro:vexfat:{}/{}", prefix, relative.display());
         }
 
         println!("Emulating read-only exFAT block device");

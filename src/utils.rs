@@ -1,3 +1,7 @@
+use std::path::{Path, PathBuf};
+
+use itertools::{EitherOrBoth, Itertools};
+
 pub fn unsigned_rounded_up_div<T>(a: T, b: T) -> T
 where
     T: num_traits::Unsigned,
@@ -10,6 +14,28 @@ where
     T: num_traits::Unsigned + Copy,
 {
     unsigned_rounded_up_div(a, b).mul(b)
+}
+
+pub fn relative_path_from_common_root<P>(root: P, path: P) -> PathBuf
+where
+    P: AsRef<Path>,
+{
+    PathBuf::from_iter(
+        root.as_ref()
+            .components()
+            .zip_longest(path.as_ref().components())
+            .filter_map(|either| match either {
+                EitherOrBoth::Both(root_component, path_component) => {
+                    if root_component == path_component {
+                        None
+                    } else {
+                        Some(path_component)
+                    }
+                }
+                EitherOrBoth::Left(_root_component) => None,
+                EitherOrBoth::Right(path_component) => Some(path_component),
+            }),
+    )
 }
 
 #[test]

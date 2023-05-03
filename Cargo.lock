@@ -389,13 +389,14 @@ dependencies = [
 
 [[package]]
 name = "udpbd-vexfat"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "arbitrary-int",
  "bitbybit",
  "bytemuck",
  "clap",
+ "itertools",
  "num-traits",
  "static_assertions",
  "vexfatbd",

@@ -2,7 +2,7 @@
 
 [package]
 name = "udpbd-vexfat"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -15,6 +15,7 @@ vexfatbd = { path = "./vexfatbd" }
 clap = { version = "^4.2.3", features = ["derive"] }
 walkdir = "^2.3.3"
 num-traits = "^0.2.15"
+itertools = "^0.10.5"
 
 [profile.release]
 overflow-checks = true
